@@ -102,4 +102,82 @@ class InventarioController extends Controller
         return redirect()->route('inventario.index')
             ->with('success', 'Inventario actualizado exitosamente');
     }
+
+    // MÉTODO DE EXPORTACIÓN
+    public function export(Request $request)
+    {
+        $query = Producto::with(['categoria', 'inventarios' => function($q) {
+            $q->latest()->first();
+        }]);
+
+        // Aplicar los mismos filtros del index
+        if ($request->has('alerta') && $request->alerta == 'bajo') {
+            $query->whereHas('inventarios', function($q) {
+                $q->whereRaw('cantidad_actual <= productos.stock_minimo');
+            });
+        }
+
+        if ($request->has('categoria') && $request->categoria != '') {
+            $query->where('categoria_id', $request->categoria);
+        }
+
+        $productos = $query->orderBy('nombre')->get();
+        
+        $filename = "inventario_" . date('Y-m-d_His') . ".csv";
+        $headers = [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=$filename",
+        ];
+
+        $callback = function() use ($productos) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM para UTF-8
+            
+            // Encabezados
+            fputcsv($file, [
+                'Código',
+                'Producto',
+                'Categoría',
+                'Stock Actual',
+                'Stock Mínimo',
+                'Estado Stock',
+                'Precio Compra',
+                'Valor en Stock',
+                'Ubicación',
+                'Estado'
+            ]);
+            
+            // Datos
+            foreach ($productos as $producto) {
+                $stockActual = $producto->stock_actual;
+                $stockMinimo = $producto->stock_minimo;
+                
+                // Determinar estado del stock
+                if ($stockActual <= 0) {
+                    $estadoStock = 'AGOTADO';
+                } elseif ($stockActual <= $stockMinimo) {
+                    $estadoStock = 'BAJO';
+                } else {
+                    $estadoStock = 'NORMAL';
+                }
+                
+                fputcsv($file, [
+                    $producto->codigo,
+                    $producto->nombre,
+                    $producto->categoria->nombre ?? 'N/A',
+                    $stockActual,
+                    $stockMinimo,
+                    $estadoStock,
+                    'Q' . number_format($producto->precio_compra, 2),
+                    'Q' . number_format($producto->precio_compra * $stockActual, 2),
+                    $producto->ubicacion ?? 'N/A',
+                    ucfirst($producto->estado)
+                ]);
+            }
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
 }

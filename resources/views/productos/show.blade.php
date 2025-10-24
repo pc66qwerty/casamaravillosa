@@ -42,13 +42,18 @@
         <div class="lg:col-span-1 space-y-6">
             
             <!-- Card de imagen -->
-            <div class="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center mb-4">
+          <div class="aspect-square bg-gradient-to-br from-gray-100 to-gray-200 rounded-lg flex items-center justify-center mb-4">
     @if($producto->imagen)
-    @if(\Illuminate\Support\Str::startsWith($producto->imagen, 'http'))
-    <img src="{{ $producto->imagen }}" alt="{{ $producto->nombre }}" class="w-full h-full object-cover rounded-lg">
-@else
-    <img src="{{ asset($producto->imagen) }}" alt="{{ $producto->nombre }}" class="w-full h-full object-cover rounded-lg">
-@endif
+        @if(\Illuminate\Support\Str::startsWith($producto->imagen, 'http'))
+            <img src="{{ $producto->imagen }}" alt="{{ $producto->nombre }}" class="w-full h-full object-cover rounded-lg">
+        @else
+            <img src="{{ asset($producto->imagen) }}" alt="{{ $producto->nombre }}" class="w-full h-full object-cover rounded-lg">
+        @endif
+    @else
+        <svg class="w-20 h-20 text-gray-400" fill="currentColor" viewBox="0 0 20 20">
+            <path fill-rule="evenodd" d="M10 2a4 4 0 00-4 4v1H5a1 1 0 00-.994.89l-1 9A1 1 0 004 18h12a1 1 0 00.994-1.11l-1-9A1 1 0 0015 7h-1V6a4 4 0 00-4-4zm2 5V6a2 2 0 10-4 0v1h4zm-6 3a1 1 0 112 0 1 1 0 01-2 0zm7-1a1 1 0 100 2 1 1 0 000-2z"/>
+        </svg>
+    @endif
 </div>
 
                 <div class="space-y-3">

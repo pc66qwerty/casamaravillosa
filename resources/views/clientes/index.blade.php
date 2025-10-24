@@ -4,6 +4,7 @@
 @section('page-title', 'Gestión de Clientes')
 @section('page-subtitle', 'Administra tu base de clientes')
 
+
 @section('content')
 <div class="space-y-6">
 

@@ -64,4 +64,52 @@ class CategoriaController extends Controller
         return redirect()->route('categorias.index')
             ->with('success', 'Categoría eliminada exitosamente');
     }
+    public function export(Request $request)
+{
+    $query = Categoria::withCount('productos');
+
+    // Aplicar filtros
+    if ($request->filled('buscar')) {
+        $query->where('nombre', 'like', "%{$request->buscar}%");
+    }
+
+    if ($request->filled('tipo')) {
+        $query->where('tipo', $request->tipo);
+    }
+
+    if ($request->filled('estado')) {
+        $query->where('estado', $request->estado);
+    }
+
+    $categorias = $query->get();
+    
+    $filename = "categorias_" . date('Y-m-d_His') . ".csv";
+    $headers = [
+        'Content-Type' => 'text/csv; charset=utf-8',
+        'Content-Disposition' => "attachment; filename=$filename",
+    ];
+
+    $callback = function() use ($categorias) {
+        $file = fopen('php://output', 'w');
+        fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM UTF-8
+        
+        fputcsv($file, ['ID', 'Nombre', 'Tipo', 'Descripción', 'Total Productos', 'Estado', 'Fecha Creación']);
+        
+        foreach ($categorias as $categoria) {
+            fputcsv($file, [
+                $categoria->id,
+                $categoria->nombre,
+                ucfirst($categoria->tipo),
+                $categoria->descripcion,
+                $categoria->productos_count,
+                ucfirst($categoria->estado),
+                $categoria->created_at->format('d/m/Y H:i')
+            ]);
+        }
+        
+        fclose($file);
+    };
+
+    return response()->stream($callback, 200, $headers);
+}
 }

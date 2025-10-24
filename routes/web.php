@@ -24,6 +24,13 @@ Route::middleware('auth')->group(function () {
     // Dashboard
     Route::get('/dashboard', [DashboardController::class, 'index'])->name('dashboard');
 
+    // Exportaciones (deben ir ANTES de los resources para evitar conflictos)
+    Route::get('/clientes/export', [ClienteController::class, 'export'])->name('clientes.export');
+    Route::get('/productos/export', [ProductoController::class, 'export'])->name('productos.export');
+    Route::get('/ventas/export', [VentaController::class, 'export'])->name('ventas.export');
+    Route::get('/categorias/export', [CategoriaController::class, 'export'])->name('categorias.export');
+    Route::get('/inventario/export', [InventarioController::class, 'export'])->name('inventario.export');
+
     // Clientes
     Route::resource('clientes', ClienteController::class);
 

@@ -126,4 +126,85 @@ class ClienteController extends Controller
         return redirect()->route('clientes.index')
             ->with('success', 'Cliente eliminado exitosamente');
     }
+    public function export(Request $request)
+{
+    $query = Cliente::query();
+
+    // Aplicar los mismos filtros del index
+    if ($request->filled('buscar')) {
+        $buscar = $request->buscar;
+        $query->where(function($q) use ($buscar) {
+            $q->where('nombre', 'like', "%{$buscar}%")
+              ->orWhere('apellido', 'like', "%{$buscar}%")
+              ->orWhere('telefono', 'like', "%{$buscar}%")
+              ->orWhere('email', 'like', "%{$buscar}%");
+        });
+    }
+
+    if ($request->filled('tipo_vehiculo')) {
+        $query->where('tipo_vehiculo', $request->tipo_vehiculo);
+    }
+
+    if ($request->filled('estado')) {
+        $query->where('estado', $request->estado);
+    }
+
+    $clientes = $query->get();
+    
+    $filename = "clientes_" . date('Y-m-d_His') . ".csv";
+    $headers = [
+        'Content-Type' => 'text/csv; charset=utf-8',
+        'Content-Disposition' => "attachment; filename=$filename",
+        'Pragma' => 'no-cache',
+        'Cache-Control' => 'must-revalidate, post-check=0, pre-check=0',
+        'Expires' => '0'
+    ];
+
+    $callback = function() use ($clientes) {
+        $file = fopen('php://output', 'w');
+        
+        // BOM para que Excel reconozca UTF-8
+        fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF));
+        
+        // Encabezados
+        fputcsv($file, [
+            'ID',
+            'Nombre',
+            'Apellido',
+            'Email',
+            'Teléfono',
+            'DPI',
+            'Dirección',
+            'Tipo Vehículo',
+            'Marca',
+            'Modelo',
+            'Placa',
+            'Estado',
+            'Fecha Registro'
+        ]);
+        
+        // Datos
+        foreach ($clientes as $cliente) {
+            fputcsv($file, [
+                $cliente->id,
+                $cliente->nombre,
+                $cliente->apellido,
+                $cliente->email,
+                $cliente->telefono,
+                $cliente->dpi,
+                $cliente->direccion,
+                ucfirst($cliente->tipo_vehiculo ?? 'N/A'),
+                $cliente->marca_vehiculo,
+                $cliente->modelo_vehiculo,
+                $cliente->placa_vehiculo,
+                ucfirst($cliente->estado),
+                $cliente->created_at->format('d/m/Y H:i')
+            ]);
+        }
+        
+        fclose($file);
+    };
+
+    return response()->stream($callback, 200, $headers);
+}
 }

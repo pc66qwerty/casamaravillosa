@@ -8,8 +8,6 @@ use App\Models\Producto;
 use App\Models\Cliente;
 use App\Models\Inventario;
 use Illuminate\Support\Facades\DB;
-use Maatwebsite\Excel\Facades\Excel;
-use App\Exports\VentasExport;
 
 class ReporteController extends Controller
 {
@@ -101,6 +99,112 @@ class ReporteController extends Controller
         $fecha_inicio = $request->fecha_inicio ?? now()->startOfMonth()->format('Y-m-d');
         $fecha_fin = $request->fecha_fin ?? now()->format('Y-m-d');
 
-        return Excel::download(new VentasExport($fecha_inicio, $fecha_fin), 'ventas.xlsx');
+        // Obtener todos los datos del reporte
+        $ventas_resumen = Venta::whereBetween('created_at', [$fecha_inicio, $fecha_fin])
+                              ->selectRaw('
+                                  COUNT(*) as total_ventas,
+                                  SUM(total) as ingresos_totales,
+                                  SUM(descuento) as descuentos_totales,
+                                  AVG(total) as ticket_promedio
+                              ')
+                              ->first();
+
+        $ventas = Venta::with(['cliente', 'usuario', 'detalles.producto'])
+                      ->whereBetween('created_at', [$fecha_inicio, $fecha_fin])
+                      ->orderBy('created_at', 'desc')
+                      ->get();
+
+        $productos_mas_vendidos = DB::table('detalle_ventas')
+            ->join('productos', 'detalle_ventas.producto_id', '=', 'productos.id')
+            ->join('ventas', 'detalle_ventas.venta_id', '=', 'ventas.id')
+            ->whereBetween('ventas.created_at', [$fecha_inicio, $fecha_fin])
+            ->select(
+                'productos.nombre',
+                'productos.codigo',
+                DB::raw('SUM(detalle_ventas.cantidad) as cantidad_vendida'),
+                DB::raw('SUM(detalle_ventas.subtotal) as ingresos')
+            )
+            ->groupBy('productos.id', 'productos.nombre', 'productos.codigo')
+            ->orderByDesc('cantidad_vendida')
+            ->limit(20)
+            ->get();
+
+        $filename = "reporte_ventas_" . date('Y-m-d_His') . ".csv";
+        $headers = [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=$filename",
+        ];
+
+        $callback = function() use ($ventas_resumen, $ventas, $productos_mas_vendidos, $fecha_inicio, $fecha_fin) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM UTF-8
+            
+            // Sección 1: Resumen General
+            fputcsv($file, ['REPORTE DE VENTAS']);
+            fputcsv($file, ['Período:', date('d/m/Y', strtotime($fecha_inicio)), 'al', date('d/m/Y', strtotime($fecha_fin))]);
+            fputcsv($file, []);
+            fputcsv($file, ['RESUMEN GENERAL']);
+            fputcsv($file, ['Total Ventas:', $ventas_resumen->total_ventas]);
+            fputcsv($file, ['Ingresos Totales:', 'Q' . number_format($ventas_resumen->ingresos_totales, 2)]);
+            fputcsv($file, ['Descuentos Totales:', 'Q' . number_format($ventas_resumen->descuentos_totales, 2)]);
+            fputcsv($file, ['Ticket Promedio:', 'Q' . number_format($ventas_resumen->ticket_promedio, 2)]);
+            fputcsv($file, []);
+            fputcsv($file, []);
+            
+            // Sección 2: Detalle de Ventas
+            fputcsv($file, ['DETALLE DE VENTAS']);
+            fputcsv($file, [
+                'N° Venta',
+                'Fecha',
+                'Cliente',
+                'Vendedor',
+                'Subtotal',
+                'Descuento',
+                'Total',
+                'Método Pago',
+                'Estado'
+            ]);
+            
+            foreach ($ventas as $venta) {
+                fputcsv($file, [
+                    $venta->numero_venta,
+                    $venta->created_at->format('d/m/Y H:i'),
+                    $venta->cliente->nombre_completo ?? 'N/A',
+                    $venta->usuario->name ?? 'N/A',
+                    'Q' . number_format($venta->subtotal, 2),
+                    'Q' . number_format($venta->descuento, 2),
+                    'Q' . number_format($venta->total, 2),
+                    ucfirst($venta->metodo_pago),
+                    ucfirst($venta->estado)
+                ]);
+            }
+            
+            fputcsv($file, []);
+            fputcsv($file, []);
+            
+            // Sección 3: Productos Más Vendidos
+            fputcsv($file, ['PRODUCTOS MÁS VENDIDOS']);
+            fputcsv($file, ['Código', 'Producto', 'Cantidad Vendida', 'Ingresos']);
+            
+            foreach ($productos_mas_vendidos as $producto) {
+                fputcsv($file, [
+                    $producto->codigo,
+                    $producto->nombre,
+                    $producto->cantidad_vendida,
+                    'Q' . number_format($producto->ingresos, 2)
+                ]);
+            }
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
+    }
+
+    // MÉTODO DE EXPORTACIÓN ADICIONAL
+    public function export(Request $request)
+    {
+        // Redirigir al método exportar existente
+        return $this->exportar($request);
     }
 }

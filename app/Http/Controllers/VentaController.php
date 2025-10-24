@@ -18,7 +18,7 @@ class VentaController extends Controller
         $query = Venta::with(['cliente', 'usuario', 'detalles']);
 
         // Filtros
-        if ($request->has('buscar')) {
+        if ($request->filled('buscar')) {
             $buscar = $request->buscar;
             $query->where(function($q) use ($buscar) {
                 $q->where('numero_venta', 'like', "%{$buscar}%")
@@ -29,19 +29,19 @@ class VentaController extends Controller
             });
         }
 
-        if ($request->has('estado') && $request->estado != '') {
+        if ($request->filled('estado')) {
             $query->where('estado', $request->estado);
         }
 
-        if ($request->has('metodo_pago') && $request->metodo_pago != '') {
+        if ($request->filled('metodo_pago')) {
             $query->where('metodo_pago', $request->metodo_pago);
         }
 
-        if ($request->has('fecha_desde')) {
+        if ($request->filled('fecha_desde')) {
             $query->whereDate('created_at', '>=', $request->fecha_desde);
         }
 
-        if ($request->has('fecha_hasta')) {
+        if ($request->filled('fecha_hasta')) {
             $query->whereDate('created_at', '<=', $request->fecha_hasta);
         }
 
@@ -154,5 +154,88 @@ class VentaController extends Controller
     {
         $venta = Venta::with(['cliente', 'usuario', 'detalles.producto.categoria'])->findOrFail($id);
         return view('ventas.show', compact('venta'));
+    }
+
+    // MÉTODO DE EXPORTACIÓN
+    public function export(Request $request)
+    {
+        $query = Venta::with(['cliente', 'usuario', 'detalles']);
+
+        // Aplicar los mismos filtros del index
+        if ($request->filled('buscar')) {
+            $buscar = $request->buscar;
+            $query->where(function($q) use ($buscar) {
+                $q->where('numero_venta', 'like', "%{$buscar}%")
+                  ->orWhereHas('cliente', function($q2) use ($buscar) {
+                      $q2->where('nombre', 'like', "%{$buscar}%")
+                         ->orWhere('apellido', 'like', "%{$buscar}%");
+                  });
+            });
+        }
+
+        if ($request->filled('estado')) {
+            $query->where('estado', $request->estado);
+        }
+
+        if ($request->filled('metodo_pago')) {
+            $query->where('metodo_pago', $request->metodo_pago);
+        }
+
+        if ($request->filled('fecha_desde')) {
+            $query->whereDate('created_at', '>=', $request->fecha_desde);
+        }
+
+        if ($request->filled('fecha_hasta')) {
+            $query->whereDate('created_at', '<=', $request->fecha_hasta);
+        }
+
+        $ventas = $query->orderBy('created_at', 'desc')->get();
+        
+        $filename = "ventas_" . date('Y-m-d_His') . ".csv";
+        $headers = [
+            'Content-Type' => 'text/csv; charset=utf-8',
+            'Content-Disposition' => "attachment; filename=$filename",
+        ];
+
+        $callback = function() use ($ventas) {
+            $file = fopen('php://output', 'w');
+            fprintf($file, chr(0xEF).chr(0xBB).chr(0xBF)); // BOM para UTF-8
+            
+            // Encabezados
+            fputcsv($file, [
+                'N° Venta',
+                'Cliente',
+                'Vendedor',
+                'Subtotal',
+                'Descuento',
+                'Total',
+                'Método Pago',
+                'Estado',
+                'Cantidad Productos',
+                'Notas',
+                'Fecha'
+            ]);
+            
+            // Datos
+            foreach ($ventas as $venta) {
+                fputcsv($file, [
+                    $venta->numero_venta,
+                    $venta->cliente->nombre_completo ?? 'N/A',
+                    $venta->usuario->name ?? 'N/A',
+                    'Q' . number_format($venta->subtotal, 2),
+                    'Q' . number_format($venta->descuento, 2),
+                    'Q' . number_format($venta->total, 2),
+                    ucfirst($venta->metodo_pago),
+                    ucfirst($venta->estado),
+                    $venta->detalles->count(),
+                    $venta->notas ?? '',
+                    $venta->created_at->format('d/m/Y H:i')
+                ]);
+            }
+            
+            fclose($file);
+        };
+
+        return response()->stream($callback, 200, $headers);
     }
 }
